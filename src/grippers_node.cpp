@@ -4,9 +4,9 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "gripper_sdk.hpp"
-#include "grippers_interfaces/srv/move_gripper.hpp"
+#include "grippers_interfaces/srv/move_grippers.hpp"
 
-using MoveGripper = grippers_interfaces::srv::MoveGripper;
+using MoveGrippers = grippers_interfaces::srv::MoveGrippers;
 using namespace std::chrono_literals;
 
 namespace grippers
@@ -60,21 +60,21 @@ public:
         }
 
         // --- Advertise service ---
-        service_ = this->create_service<MoveGripper>(
-            "/move_gripper",
+        service_ = this->create_service<MoveGrippers>(
+            "/move_grippers",
             std::bind(&GripperNode::handle_service, this,
                       std::placeholders::_1,
                       std::placeholders::_2));
 
         RCLCPP_INFO(this->get_logger(),
-                    "Service /move_gripper is ready.");
+                    "Service /move_grippers is ready.");
     }
 
 private:
     // --- Service handler ---
     void handle_service(
-        const std::shared_ptr<MoveGripper::Request>  request,
-        const std::shared_ptr<MoveGripper::Response> response)
+        const std::shared_ptr<MoveGrippers::Request>  request,
+        const std::shared_ptr<MoveGrippers::Response> response)
     {
         // Validate command byte
         if (request->cmd != CMD_OPEN &&
@@ -117,14 +117,14 @@ private:
                     "actual_rpm: %u  current: %u  msg: %s",
                     result.success ? "true" : "false",
                     result.status,
-                    result.speed_rpm,
-                    result.current,
+                    result.actual_rpm,
+                    result.actual_current,
                     result.message.c_str());
     }
 
     // ── Members ───────────────────────────────────────────────────────────────
     std::unique_ptr<GripperTCPClient>            tcp_client_;
-    rclcpp::Service<MoveGripper>::SharedPtr      service_;
+    rclcpp::Service<MoveGrippers>::SharedPtr      service_;
 };
 
 }  // namespace gripper
@@ -137,7 +137,7 @@ int main(int argc, char ** argv)
     rclcpp::init(argc, argv);
 
     try {
-        rclcpp::spin(std::make_shared<gripper::GripperNode>());
+        rclcpp::spin(std::make_shared<grippers::GripperNode>());
     }
     catch (const std::exception & e) {
         RCLCPP_FATAL(rclcpp::get_logger("main"),
