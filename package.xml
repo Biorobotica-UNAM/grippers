@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>grippers</name>
+  <version>0.0.0</version>
+  <description>
+    ROS 2 Jazzy package for controlling a gripper motor via TCP/IP
+    over a W5500 Ethernet module connected to an RP2350 microcontroller.
+  </description>
+
+  <maintainer email="rafael.cuellarr@ingenieria.unam.edu">rafael</maintainer>
+  <license>MIT</license>
+
+  <!-- Build tools -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Runtime dependencies -->
+  <depend>rclcpp</depend>
+  <depend>grippers_interfaces</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
