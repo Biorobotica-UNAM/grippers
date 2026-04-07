@@ -35,7 +35,7 @@ public:
     {
         // --- Declare parameters ---
         this->declare_parameter<std::string>("rp2350_host",    "192.168.50.2");
-        this->declare_parameter<int>        ("rp2350_port",    7777);
+        this->declare_parameter<int>        ("rp2350_port",    8888);
         this->declare_parameter<int>        ("tcp_timeout_ms", 1000);
 
         const auto host       = this->get_parameter("rp2350_host").as_string();

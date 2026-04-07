@@ -105,9 +105,9 @@ GripperResponse GripperTCPClient::send_command(uint8_t cmd) {
     // rx[2] = status
     // rx[3..4] = actual RPM
     // rx[5..6] = actual Current
-    result.status         = rx[2];
-    result.actual_rpm     = (static_cast<uint16_t>(rx[3]) << 8) | rx[4];
-    result.actual_current = (static_cast<uint16_t>(rx[5]) << 8) | rx[6];
+    result.status         = rx[4];
+    result.actual_rpm     = (static_cast<uint16_t>(rx[5]) << 4) | ((rx[6] >> 4) & 0x0F);
+    result.actual_current = (static_cast<uint16_t>((rx[6]) & 0x0F)) | rx[7];
 
     switch (result.status) {
         case STATUS_MOVING:
