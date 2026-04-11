@@ -40,8 +40,8 @@ GripperTCPClient::GripperTCPClient(const std::string & host,
     struct timeval tv;
     tv.tv_sec  = timeout_ms_ / 1000;
     tv.tv_usec = (timeout_ms_ % 1000) * 1000;
-    ::setsockopt(sock_fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    ::setsockopt(sock_fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    ::setsockopt(sock_fd_, SOL_SOCKET, 0, &tv, sizeof(tv)); // SO_SNDTIMEO -> 0 (NO_TIMEOUT)
+    ::setsockopt(sock_fd_, SOL_SOCKET, 0, &tv, sizeof(tv)); // SO_RCVTIMEO -> 0 (NO_TIMEOUT)
 
     // ── Connect ───────────────────────────────────────────────────────────────
     struct sockaddr_in addr{};
@@ -110,9 +110,13 @@ GripperResponse GripperTCPClient::send_command(uint8_t cmd) {
     result.actual_current = (static_cast<uint16_t>((rx[6]) & 0x0F)) | rx[7];
 
     switch (result.status) {
-        case STATUS_MOVING:
+        case STATUS_OPENING:
             result.success = true;
-            result.message = "Motor moving toward target";
+            result.message = "Motor retracting to initial position";
+            break;
+        case STATUS_CLOSING:
+            result.success = true;
+            result.message = "Motor closing toward target";
             break;
         case STATUS_REACHED:
             result.success = true;

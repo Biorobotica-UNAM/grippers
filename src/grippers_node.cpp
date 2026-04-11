@@ -76,15 +76,18 @@ private:
         const std::shared_ptr<MoveGrippers::Request>  request,
         const std::shared_ptr<MoveGrippers::Response> response)
     {
+        static uint8_t     cmd;
+        static std::string status;
+
         // Validate command byte
-        if (request->cmd != CMD_OPEN &&
-            request->cmd != CMD_CLOSE &&
-            request->cmd != CMD_STOP &&
-            request->cmd != CMD_QUERY_STATUS)
-        {
+        if (request->cmd == "open") cmd = CMD_OPEN;
+        else if (request->cmd == "close") cmd = CMD_CLOSE;
+        else if (request->cmd == "stop") cmd = CMD_STOP;
+        else if (request->cmd == "status") cmd = CMD_QUERY_STATUS;
+        else {
             response->success = false;
             response->message = "Unknown cmd byte: " +
-                                std::to_string(request->cmd) +
+                                request->cmd +
                                 ". Use 0x01 (set speed) or 0x02 (query).";
             RCLCPP_WARN(this->get_logger(), "%s", response->message.c_str());
             return;
@@ -99,24 +102,30 @@ private:
         }
 
         RCLCPP_INFO(this->get_logger(),
-                    "Service call — cmd: 0x%02X", request->cmd);
+                    "Service call — cmd: %s", request->cmd.c_str());
 
         // Send command over TCP and wait for response
         const GripperResponse result =
-            tcp_client_->send_command(request->cmd);
+            tcp_client_->send_command(cmd);
+
+        if(result.status == 0x01) status = "OPENING";
+        if(result.status == 0x02) status = "CLOSING";
+        if(result.status == 0x03) status = "REACHED";
+        if(result.status == 0x04) status = "IDLE";
+        if(result.status == 0x05) status = "STALLED";
 
         // Fill ROS 2 response
         response->success    = result.success;
-        response->status     = result.status;
+        response->status     = status;
         response->speed_rpm  = result.actual_rpm;
         response->current    = result.actual_current;
         response->message    = result.message;
 
         RCLCPP_INFO(this->get_logger(),
-                    "Response — success: %s  status: 0x%02X  "
+                    "Response — success: %s  status: %s  "
                     "actual_rpm: %u  current: %u  msg: %s",
                     result.success ? "true" : "false",
-                    result.status,
+                    status.c_str(),
                     result.actual_rpm,
                     result.actual_current,
                     result.message.c_str());
