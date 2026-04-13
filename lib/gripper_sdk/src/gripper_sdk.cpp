@@ -110,21 +110,13 @@ GripperResponse GripperTCPClient::send_command(uint8_t cmd) {
     result.actual_current = (static_cast<uint16_t>((rx[6]) & 0x0F)) | rx[7];
 
     switch (result.status) {
-        case STATUS_OPENING:
-            result.success = true;
-            result.message = "Motor retracting to initial position";
-            break;
-        case STATUS_CLOSING:
-            result.success = true;
-            result.message = "Motor closing toward target";
-            break;
         case STATUS_REACHED:
             result.success = true;
             result.message = "Object target reached";
             break;
-        case STATUS_IDLE:
+        case STATUS_RETRACTED:
             result.success = true;
-            result.message = "Motor idle";
+            result.message = "Gripper retracted to initial position";
             break;
         case STATUS_STALLED:
             result.success = false;
@@ -138,6 +130,45 @@ GripperResponse GripperTCPClient::send_command(uint8_t cmd) {
     }
 
     return result;
+}
+
+bool GripperTCPClient::try_recv(GripperResponse &result)
+{
+    uint8_t rx[FRAME_SIZE] = {};
+
+    if (!recv_all(rx, FRAME_SIZE)) {   // blocks until full frame or timeout
+        return false;
+    }
+
+    // Same parsing as send_command
+    result.status         = rx[4];
+    result.actual_rpm     = (static_cast<uint16_t>(rx[5]) << 4) | ((rx[6] >> 4) & 0x0F);
+    result.actual_current = (static_cast<uint16_t>((rx[6]) & 0x0F)) | rx[7];
+
+    switch (result.status) {
+        case STATUS_MOVING:
+            result.success = true;
+            result.message = "In progress";
+            break;
+        case STATUS_REACHED:
+            result.success = true;
+            result.message = "Object target reached";
+            break;
+        case STATUS_RETRACTED:
+            result.success = true;
+            result.message = "Gripper retracted to initial position";
+            break;
+        case STATUS_STALLED:
+            result.success = false;
+            result.message = "Motor stalled — could not reach target";
+            break;
+        default:
+            result.success = false;
+            result.message = "Unknown status: " + std::to_string(result.status);
+            break;
+    }
+
+    return true;
 }
 
 // =============================================================================
@@ -160,7 +191,7 @@ bool GripperTCPClient::send_all(const uint8_t * buf, std::size_t len)
 
 bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
 {
-    // SO_RCVTIMEO is set on the socket so ::recv() will time out automatically.
+    // SO_RCVTIMEO isn't set on the socket so ::recv() won't time out
     std::size_t received = 0;
     while (received < len) {
         ssize_t n = ::recv(sock_fd_,

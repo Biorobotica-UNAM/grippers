@@ -1,6 +1,9 @@
 #include <memory>
 #include <string>
 #include <chrono>
+#include <thread>
+#include <atomic>
+#include <sensor_msgs/msg/joint_state.hpp>
 
 #include "rclcpp/rclcpp.hpp"
 #include "gripper_sdk.hpp"
@@ -66,11 +69,50 @@ public:
                       std::placeholders::_1,
                       std::placeholders::_2));
 
+        // --- Start reader thread ---
+        running_ = true;
+        reader_thread_ = std::thread(&GripperNode::reader_loop, this);
+
         RCLCPP_INFO(this->get_logger(),
                     "Service /move_grippers is ready.");
     }
 
+    ~GripperNode()
+    {
+        running_ = false;
+        if (reader_thread_.joinable()) reader_thread_.join();
+    }
+
 private:
+    // blocks on TCP recv, dispatches progress vs final
+    void reader_loop()
+    {
+        while (running_) {
+            if (!tcp_client_ || !tcp_client_->is_connected()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                continue;
+            }
+
+            // Blocks until any packet arrives (progress or final)
+            GripperResponse pkt;
+            if (!tcp_client_->try_recv(pkt)) {   // non-throwing, returns false on timeout
+                continue;
+            }
+
+            if (pkt.status == STATUS_MOVING) {
+                publish_joint_states(pkt);
+            } else {
+                // Terminal packet — wake up the service handler
+                {
+                    std::lock_guard<std::mutex> lock(result_mutex_);
+                    latest_result_ = pkt;
+                    result_ready_  = true;
+                }
+                result_cv_.notify_one();
+            }
+        }
+    }
+
     // --- Service handler ---
     void handle_service(
         const std::shared_ptr<MoveGrippers::Request>  request,
@@ -101,25 +143,26 @@ private:
             return;
         }
 
+        // Reset result flag before sending
+        {
+            std::lock_guard<std::mutex> lock(result_mutex_);
+            result_ready_ = false;
+        }
+
         RCLCPP_INFO(this->get_logger(),
                     "Service call — cmd: %s", request->cmd.c_str());
 
-        // Send command over TCP and wait for response
-        const GripperResponse result =
-            tcp_client_->send_command(cmd);
+        tcp_client_->send_command(cmd);
 
-        if(result.status == 0x01) status = "OPENING";
-        if(result.status == 0x02) status = "CLOSING";
-        if(result.status == 0x03) status = "REACHED";
-        if(result.status == 0x04) status = "IDLE";
-        if(result.status == 0x05) status = "STALLED";
+        // Wait for reader thread to deliver a terminal packet
+        GripperResponse result;
+        {
+            std::unique_lock<std::mutex> lock(result_mutex_);
+            result_cv_.wait(lock, [this] { return result_ready_.load(); });
+            result = latest_result_;
+        }
 
-        // Fill ROS 2 response
-        response->success    = result.success;
-        response->status     = status;
-        response->speed_rpm  = result.actual_rpm;
-        response->current    = result.actual_current;
-        response->message    = result.message;
+        fill_response(result, response);
 
         RCLCPP_INFO(this->get_logger(),
                     "Response — success: %s  status: %s  "
@@ -131,9 +174,48 @@ private:
                     result.message.c_str());
     }
 
+    void publish_joint_states(const GripperResponse & pkt)
+    {
+        auto msg = sensor_msgs::msg::JointState();
+        msg.header.stamp    = this->now();
+        msg.name            = { "gripper_joint" };
+        msg.position        = { static_cast<double>(pkt.actual_rpm) };   // encoder count
+        joint_state_pub_->publish(msg);
+    }
+
+    void fill_response(const GripperResponse & result,
+                       const std::shared_ptr<MoveGrippers::Response> & response)
+    {
+        static const std::unordered_map<uint8_t, std::string> status_map = {
+            { STATUS_RETRACTED,   "RETRACTED"   },
+            { STATUS_REACHED,     "REACHED"     },
+            { STATUS_STALLED,     "STALLED"     },
+        };
+
+        auto it = status_map.find(result.status);
+        response->status  = (it != status_map.end()) ? it->second : "UNKNOWN";
+        response->success = (result.status == STATUS_REACHED ||
+                             result.status == STATUS_RETRACTED);
+        response->message = result.message;
+        response->speed_rpm = result.actual_rpm;
+        response->current   = result.actual_current;
+    }
+
+
     // ── Members ───────────────────────────────────────────────────────────────
     std::unique_ptr<GripperTCPClient>            tcp_client_;
-    rclcpp::Service<MoveGrippers>::SharedPtr      service_;
+    rclcpp::Service<MoveGrippers>::SharedPtr     service_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
+
+    // Reader thread
+    std::thread          reader_thread_;
+    std::atomic<bool>    running_;
+
+    // Service ↔ reader handoff
+    std::mutex              result_mutex_;
+    std::condition_variable result_cv_;
+    std::atomic<bool>       result_ready_{ false };
+    GripperResponse         latest_result_;
 };
 
 }  // namespace gripper

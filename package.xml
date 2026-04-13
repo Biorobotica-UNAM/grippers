@@ -17,6 +17,7 @@
   <!-- Runtime dependencies -->
   <depend>rclcpp</depend>
   <depend>grippers_interfaces</depend>
+  <depend>sensor_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

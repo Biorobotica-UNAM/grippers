@@ -36,11 +36,10 @@ constexpr uint8_t CMD_CLOSE        = 0x02;
 constexpr uint8_t CMD_STOP         = 0x03;
 constexpr uint8_t CMD_QUERY_STATUS = 0x04;
 
-constexpr uint8_t STATUS_OPENING   = 0x01;
-constexpr uint8_t STATUS_CLOSING   = 0x02;
-constexpr uint8_t STATUS_REACHED   = 0x03;
-constexpr uint8_t STATUS_IDLE      = 0x04;
-constexpr uint8_t STATUS_STALLED   = 0x05;
+constexpr uint8_t STATUS_MOVING    = 0x01;
+constexpr uint8_t STATUS_REACHED   = 0x02;
+constexpr uint8_t STATUS_RETRACTED = 0x03;
+constexpr uint8_t STATUS_STALLED   = 0x04;
 
 constexpr std::size_t FRAME_SIZE   = 8;
 
@@ -71,6 +70,7 @@ public:
     // Returns a GripperResponse describing the outcome.
     // On TCP error the socket is marked as disconnected and success=false.
     GripperResponse send_command(uint8_t cmd);
+    bool try_recv(GripperResponse &result);
 
     bool is_connected() const { return sock_fd_ >= 0; }
 
