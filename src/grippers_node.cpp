@@ -5,6 +5,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "gripper_sdk.hpp"
 #include "grippers_interfaces/srv/move_grippers.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 
 using MoveGrippers = grippers_interfaces::srv::MoveGrippers;
 using namespace std::chrono_literals;
@@ -33,16 +34,9 @@ public:
     explicit GripperNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
     : Node("gripper_node", options)
     {
-        // --- Declare parameters ---
-        this->declare_parameter<std::string>("rp2350_host",    "192.168.50.2");
-        this->declare_parameter<int>        ("rp2350_port",    8888);
-        this->declare_parameter<int>        ("tcp_timeout_ms", 1000);
+        declare_and_get_parameters();
 
-        const auto host       = this->get_parameter("rp2350_host").as_string();
-        const auto port       = static_cast<uint16_t>(
-                                    this->get_parameter("rp2350_port").as_int());
-        const auto timeout_ms = static_cast<int>(
-                                    this->get_parameter("tcp_timeout_ms").as_int());
+        init_joint_states();
 
         // --- Connect to RP2350 ---
         RCLCPP_INFO(this->get_logger(),
@@ -61,16 +55,51 @@ public:
 
         // --- Advertise service ---
         service_ = this->create_service<MoveGrippers>(
-            "/move_grippers",
+            service_name,
             std::bind(&GripperNode::handle_service, this,
                       std::placeholders::_1,
                       std::placeholders::_2));
 
+        pub_joint_state = this->create_publisher<sensor_msgs::msg::JointState>(joint_states_topic, 10);
+
         RCLCPP_INFO(this->get_logger(),
-                    "Service /move_grippers is ready.");
+                    "Service %s is ready.", service_name);
+
+        timer = this->create_wall_timer(80ms, std::bind(&GripperNode::timer_callback, this));
     }
 
 private:
+    // --- Declare parameters ---
+    void declare_and_get_parameters(void) {
+        this->declare_parameter<std::string>("gripper_ip",     "172.27.1.120");
+        this->declare_parameter<int>        ("gripper_port",   8888);
+        this->declare_parameter<int>        ("tcp_timeout_ms", 1000);
+
+        this->declare_parameter<std::string>("joint_states_topic",         "gripper/joint_states");
+        this->declare_parameter<std::string>("gripper_controller_service", "move_gripper");
+
+        this->declare_parameter("joint_names", std::vector<std::string>{});
+
+        host       = this->get_parameter("gripper_ip").as_string();
+        port       = static_cast<uint16_t>(
+                                    this->get_parameter("gripper_port").as_int());
+        timeout_ms = static_cast<int>(
+                                    this->get_parameter("tcp_timeout_ms").as_int());
+
+        joint_states_topic = this->get_parameter("joint_states_topic").as_string();
+        service_name = this->get_parameter("gripper_controller_service").as_string();
+
+        joint_names = this->get_parameter("joint_names").as_string_array();
+    }
+
+    void init_joint_states(void) {
+        joint_states.name = joint_names;
+        joint_states.header.stamp = this->now();
+        joint_states.position = {0.78539, 0.78539};
+
+        pub_joint_state->publish(joint_states);
+    }
+
     // --- Service handler ---
     void handle_service(
         const std::shared_ptr<MoveGrippers::Request>  request,
@@ -105,8 +134,7 @@ private:
                     "Service call — cmd: %s", request->cmd.c_str());
 
         // Send command over TCP and wait for response
-        const GripperResponse result =
-            tcp_client_->send_command(cmd);
+        result = tcp_client_->send_command(cmd);
 
         if(result.status == 0x01) status = "OPENING";
         if(result.status == 0x02) status = "CLOSING";
@@ -117,7 +145,7 @@ private:
         // Fill ROS 2 response
         response->success    = result.success;
         response->status     = status;
-        response->speed_rpm  = result.actual_rpm;
+        response->position   = result.actual_count;
         response->current    = result.actual_current;
         response->message    = result.message;
 
@@ -126,14 +154,49 @@ private:
                     "actual_rpm: %u  current: %u  msg: %s",
                     result.success ? "true" : "false",
                     status.c_str(),
-                    result.actual_rpm,
+                    result.actual_count,
                     result.actual_current,
                     result.message.c_str());
     }
 
+    std::vector<double> count_to_radians(int32_t count) {
+        std::vector<double> joint_positions(2);
+        float position = 6.2832 * count / (40 * 26 * 48);
+
+        for (uint8_t i = 0; i < 2; i++) joint_positions[i] = position;
+
+        return joint_positions;
+    }
+
+    void timer_callback(void) {
+        joint_states.header.stamp = this->now();
+        joint_states.position = count_to_radians(result.actual_count);
+
+        pub_joint_state->publish(joint_states);
+    }
+
+    // ── Parameters ────────────────────────────────────────────────────────────
+    std::string host;
+    uint16_t port;
+    int timeout_ms;
+
+    std::string joint_states_topic;
+    std::string service_name;
+
+    std::vector<std::string> joint_names;
+
+    // ── Parameters ────────────────────────────────────────────────────────────
+    sensor_msgs::msg::JointState joint_states;
+
+    // ── TCP Response ────────────────────────────────────────────────────────────
+    GripperResponse result;
+
     // ── Members ───────────────────────────────────────────────────────────────
     std::unique_ptr<GripperTCPClient>            tcp_client_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr pub_joint_state;
     rclcpp::Service<MoveGrippers>::SharedPtr      service_;
+
+    rclcpp::TimerBase::SharedPtr timer;
 };
 
 }  // namespace gripper

@@ -1,0 +1,22 @@
+<launch>
+
+  <arg name="use_sim_time" default="false"/>
+
+  <group>
+    <push-ros-namespace namespace="grippers"/>
+
+    <!-- Right Gripper -->
+    <node pkg="grippers" exec="grippers_node" name="right_gripper_node" output="screen">
+      <param from="$(find-pkg-share grippers)/config/right_gripper.yaml"/>
+      <param name="use_sim_time" value="$(var use_sim_time)"/>
+    </node>
+
+    <!-- Left Gripper -->
+    <node pkg="grippers" exec="grippers_node" name="right_gripper_node" output="screen">
+      <param from="$(find-pkg-share grippers)/config/left_gripper.yaml"/>
+      <param name="use_sim_time" value="$(var use_sim_time)"/>
+    </node>
+
+  </group>
+
+</launch>

@@ -48,7 +48,7 @@ struct GripperResponse
 {
     bool     success        {false};
     uint8_t  status         {0};
-    uint16_t actual_rpm     {0};
+    int32_t actual_count   {0};
     uint16_t actual_current {0};
     std::string message;
 };

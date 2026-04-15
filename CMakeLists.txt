@@ -15,6 +15,7 @@ find_package(ament_cmake         REQUIRED)
 find_package(rclcpp              REQUIRED)
 find_package(tf2_ros             REQUIRED)
 find_package(grippers_interfaces REQUIRED)
+find_package(sensor_msgs         REQUIRED)
 
 # --- TCP client library ---
 add_subdirectory(lib)
@@ -32,11 +33,20 @@ target_link_libraries(grippers_node
 ament_target_dependencies(grippers_node
   rclcpp
   grippers_interfaces
+  sensor_msgs
 )
 
 # --- Install ---
 install(TARGETS grippers_node
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+install(DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}/
 )
 
 ament_package()
