@@ -34,6 +34,7 @@ ament_target_dependencies(grippers_node
   rclcpp
   sensor_msgs
   grippers_interfaces
+  sensor_msgs
 )
 
 # --- Install ---

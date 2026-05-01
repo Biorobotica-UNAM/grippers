@@ -8,6 +8,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "gripper_sdk.hpp"
 #include "grippers_interfaces/srv/move_grippers.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 
 using MoveGrippers = grippers_interfaces::srv::MoveGrippers;
 using namespace std::chrono_literals;
@@ -195,7 +196,7 @@ private:
                     "actual_rpm: %u  current: %u  msg: %s",
                     result.success ? "true" : "false",
                     status.c_str(),
-                    result.actual_rpm,
+                    result.actual_count,
                     result.actual_current,
                     result.message.c_str());
     }
