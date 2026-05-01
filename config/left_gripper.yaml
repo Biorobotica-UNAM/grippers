@@ -1,0 +1,11 @@
+/**:
+  ros__parameters:
+    ip: "172.27.1.25"
+    port: 8888
+    tcp_timeout_ms: 2000
+
+    joint_states_topic: "left_gripper/joint_states"
+    gripper_controller_service: "move_left_gripper"
+
+    joint_names:
+      ["left_gripper_L_joint", "left_gripper_R_joint"]

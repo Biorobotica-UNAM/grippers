@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<launch>
+
+  <group>
+    <push-ros-namespace namespace="grippers"/>
+
+    <!-- Right Gripper -->
+    <node pkg="grippers" exec="grippers_node" name="right_gripper_node" output="screen">
+      <param from="$(find-pkg-share grippers)/config/right_gripper.yaml"/>
+    </node>
+
+    <!-- Left Gripper -->
+    <node pkg="grippers" exec="grippers_node" name="left_gripper_node" output="screen">
+      <param from="$(find-pkg-share grippers)/config/left_gripper.yaml"/>
+    </node>
+
+  </group>
+
+</launch>
