@@ -2,6 +2,8 @@
 
 #include <string>
 #include <cstdint>
+#include <iostream>
+#include <thread>
 
 // =============================================================================
 //  GripperSDK
@@ -69,7 +71,7 @@ public:
     // Send a command and wait for the response.
     // Returns a GripperResponse describing the outcome.
     // On TCP error the socket is marked as disconnected and success=false.
-    GripperResponse send_command(uint8_t cmd);
+    bool send_command(uint8_t cmd);
     bool try_recv(GripperResponse &result);
 
     bool is_connected() const { return sock_fd_ >= 0; }

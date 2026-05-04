@@ -71,12 +71,12 @@ GripperTCPClient::~GripperTCPClient() {
 //  Public API
 // =============================================================================
 
-GripperResponse GripperTCPClient::send_command(uint8_t cmd) {
+bool GripperTCPClient::send_command(uint8_t cmd) {
     GripperResponse result;
 
     if (!is_connected()) {
         result.message = "TCP socket is not connected";
-        return result;
+        return false;
     }
 
     // ── Build 8-byte request frame ────────────────────────────────────────────
@@ -88,55 +88,20 @@ GripperResponse GripperTCPClient::send_command(uint8_t cmd) {
     if (!send_all(tx, FRAME_SIZE)) {
         close_socket();
         result.message = "TCP send failed: " + std::string(std::strerror(errno));
-        return result;
+        return false;
     }
 
-    // ── Receive 8-byte response frame ─────────────────────────────────────────
-    uint8_t rx[FRAME_SIZE] = {};
-    if (!recv_all(rx, FRAME_SIZE)) {
-        close_socket();
-        result.message = "TCP receive failed or timed out";
-        return result;
-    }
-
-    // ── Parse response ────────────────────────────────────────────────────────
-    // rx[0] = echo cmd
-    // rx[1] = echo seq
-    // rx[2] = status
-    // rx[3..4] = actual RPM
-    // rx[5..6] = actual Current
-    result.status         = rx[4];
-    result.actual_rpm     = (static_cast<uint16_t>(rx[5]) << 4) | ((rx[6] >> 4) & 0x0F);
-    result.actual_current = (static_cast<uint16_t>((rx[6]) & 0x0F)) | rx[7];
-
-    switch (result.status) {
-        case STATUS_REACHED:
-            result.success = true;
-            result.message = "Object target reached";
-            break;
-        case STATUS_RETRACTED:
-            result.success = true;
-            result.message = "Gripper retracted to initial position";
-            break;
-        case STATUS_STALLED:
-            result.success = false;
-            result.message = "Motor stalled — could not reach target";
-            break;
-        default:
-            result.success = false;
-            result.message = "Unknown status byte: " +
-                             std::to_string(result.status);
-            break;
-    }
-
-    return result;
+    return true;
 }
 
 bool GripperTCPClient::try_recv(GripperResponse &result)
 {
     uint8_t rx[FRAME_SIZE] = {};
 
+    std::cout << "[try_recv] thread " << std::this_thread::get_id() << std::endl;
+
     if (!recv_all(rx, FRAME_SIZE)) {   // blocks until full frame or timeout
+        std::cout << "Fail in try_recv." << std::endl;
         return false;
     }
 
@@ -168,6 +133,7 @@ bool GripperTCPClient::try_recv(GripperResponse &result)
             break;
     }
 
+    std::cout << "Succeed in try_recv. " << result.message << std::endl;
     return true;
 }
 
@@ -191,6 +157,8 @@ bool GripperTCPClient::send_all(const uint8_t * buf, std::size_t len)
 
 bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
 {
+    std::cout << "[recv_all] thread " << std::this_thread::get_id() << std::endl;
+
     // SO_RCVTIMEO isn't set on the socket so ::recv() won't time out
     std::size_t received = 0;
     while (received < len) {
@@ -201,6 +169,7 @@ bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
         if (n <= 0) return false;   // timeout (EAGAIN) or closed connection
         received += static_cast<std::size_t>(n);
     }
+    std::cout << "Succeed in recv_all" << std::endl;
     return true;
 }
 
