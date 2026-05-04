@@ -98,8 +98,6 @@ bool GripperTCPClient::try_recv(GripperResponse &result)
 {
     uint8_t rx[FRAME_SIZE] = {};
 
-    std::cout << "[try_recv] thread " << std::this_thread::get_id() << std::endl;
-
     if (!recv_all(rx, FRAME_SIZE)) {   // blocks until full frame or timeout
         std::cout << "Fail in try_recv." << std::endl;
         return false;
@@ -133,7 +131,6 @@ bool GripperTCPClient::try_recv(GripperResponse &result)
             break;
     }
 
-    std::cout << "Succeed in try_recv. " << result.message << std::endl;
     return true;
 }
 
@@ -157,8 +154,6 @@ bool GripperTCPClient::send_all(const uint8_t * buf, std::size_t len)
 
 bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
 {
-    std::cout << "[recv_all] thread " << std::this_thread::get_id() << std::endl;
-
     // SO_RCVTIMEO isn't set on the socket so ::recv() won't time out
     std::size_t received = 0;
     while (received < len) {
@@ -169,7 +164,6 @@ bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
         if (n <= 0) return false;   // timeout (EAGAIN) or closed connection
         received += static_cast<std::size_t>(n);
     }
-    std::cout << "Succeed in recv_all" << std::endl;
     return true;
 }
 
