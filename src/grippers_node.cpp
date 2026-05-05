@@ -25,8 +25,8 @@ namespace grippers
 //    - Each service call sends one 8-byte command and returns the response
 //
 //  Parameters:
-//    rp2350_host    (string,  default "192.168.50.2")  RP2350 IP address
-//    rp2350_port    (int,     default 7777)            RP2350 TCP port
+//    rp2350_host    (string,  default "172.27.1.25")  RP2350 IP address
+//    rp2350_port    (int,     default 8888)            RP2350 TCP port
 //    tcp_timeout_ms (int,     default 1000)            per-call timeout in ms
 // =============================================================================
 
@@ -259,7 +259,7 @@ private:
     // Service ↔ reader handoff
     std::mutex              result_mutex_;
     std::condition_variable result_cv_;
-    bool       result_ready_ = false;
+    bool                    result_ready_ = false;
     GripperResponse         latest_result_;
 };
 

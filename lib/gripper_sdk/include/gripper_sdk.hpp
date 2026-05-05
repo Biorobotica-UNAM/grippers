@@ -65,7 +65,7 @@ public:
     ~GripperTCPClient();
 
     // Not copyable — owns a socket fd
-    GripperTCPClient(const GripperTCPClient &)            = delete;
+    GripperTCPClient(const GripperTCPClient &)             = delete;
     GripperTCPClient & operator=(const GripperTCPClient &) = delete;
 
     // Send a command and wait for the response.
@@ -76,7 +76,13 @@ public:
 
     bool is_connected() const { return sock_fd_ >= 0; }
 
+    bool connect_with_retry();
+
 private:
+    bool connect_once();
+
+    void configure_socket();
+
     // Send exactly `len` bytes — handles EINTR/partial writes
     bool send_all(const uint8_t * buf, std::size_t len);
 
@@ -86,6 +92,8 @@ private:
     void close_socket();
 
     int         sock_fd_    {-1};
+    std::string host_;
+    uint16_t    port_;
     int         timeout_ms_ {1000};
     uint8_t     seq_        {0};    // rolling sequence number
 };
