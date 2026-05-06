@@ -2,6 +2,8 @@
 
 #include <string>
 #include <cstdint>
+#include <iostream>
+#include <thread>
 
 // =============================================================================
 //  GripperSDK
@@ -63,18 +65,24 @@ public:
     ~GripperTCPClient();
 
     // Not copyable — owns a socket fd
-    GripperTCPClient(const GripperTCPClient &)            = delete;
+    GripperTCPClient(const GripperTCPClient &)             = delete;
     GripperTCPClient & operator=(const GripperTCPClient &) = delete;
 
     // Send a command and wait for the response.
     // Returns a GripperResponse describing the outcome.
     // On TCP error the socket is marked as disconnected and success=false.
-    GripperResponse send_command(uint8_t cmd);
+    bool send_command(uint8_t cmd);
     bool try_recv(GripperResponse &result);
 
-    bool is_connected() const { return sock_fd_ >= 0; }
+    bool is_connected() const { return connected_; }
+
+    bool connect_with_retry();
 
 private:
+    bool connect_once();
+
+    void configure_socket();
+
     // Send exactly `len` bytes — handles EINTR/partial writes
     bool send_all(const uint8_t * buf, std::size_t len);
 
@@ -84,7 +92,10 @@ private:
     void close_socket();
 
     int         sock_fd_    {-1};
+    std::string host_;
+    uint16_t    port_;
     int         timeout_ms_ {1000};
+    bool        connected_{false};
     uint8_t     seq_        {0};    // rolling sequence number
 };
 

@@ -25,8 +25,8 @@ namespace grippers
 //    - Each service call sends one 8-byte command and returns the response
 //
 //  Parameters:
-//    rp2350_host    (string,  default "192.168.50.2")  RP2350 IP address
-//    rp2350_port    (int,     default 7777)            RP2350 TCP port
+//    rp2350_host    (string,  default "172.27.1.25")  RP2350 IP address
+//    rp2350_port    (int,     default 8888)            RP2350 TCP port
 //    tcp_timeout_ms (int,     default 1000)            per-call timeout in ms
 // =============================================================================
 
@@ -58,19 +58,19 @@ public:
         joint_names = this->get_parameter("joint_names").as_string_array();
 
         // --- Connect to RP2350 ---
-        // RCLCPP_INFO(this->get_logger(),
-        //             "Connecting to RP2350 at %s:%d (timeout %d ms)...",
-        //             host.c_str(), port, timeout_ms);
-        // try {
-        //     tcp_client_ = std::make_unique<GripperTCPClient>(
-        //         host, port, timeout_ms);
-        //     RCLCPP_INFO(this->get_logger(), "TCP connection established.");
-        // }
-        // catch (const std::exception & e) {
-        //     RCLCPP_FATAL(this->get_logger(),
-        //                  "Failed to connect to RP2350: %s", e.what());
-        //     throw;   // let the executor handle the fatal error
-        // }
+        RCLCPP_INFO(this->get_logger(),
+                    "Connecting to RP2350 at %s:%d (timeout %d ms)...",
+                    host.c_str(), port, timeout_ms);
+        try {
+            tcp_client_ = std::make_unique<GripperTCPClient>(
+                host, port, timeout_ms);
+            RCLCPP_INFO(this->get_logger(), "TCP connection established.");
+        }
+        catch (const std::exception & e) {
+            RCLCPP_FATAL(this->get_logger(),
+                         "Failed to connect to RP2350: %s", e.what());
+            throw;   // let the executor handle the fatal error
+        }
 
         initialize_messages();
 
@@ -121,6 +121,11 @@ private:
                 continue;
             }
 
+            if (!waiting_for_response_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+
             // Blocks until any packet arrives (progress or final)
             GripperResponse pkt;
             if (!tcp_client_->try_recv(pkt)) {   // non-throwing, returns false on timeout
@@ -133,6 +138,7 @@ private:
                     std::lock_guard<std::mutex> lock(result_mutex_);
                     latest_result_ = pkt;
                     result_ready_  = true;
+                    waiting_for_response_ = false;
                 }
                 result_cv_.notify_one();
             }
@@ -163,28 +169,40 @@ private:
 
         // Guard against a lost connection
         if (!tcp_client_ || !tcp_client_->is_connected()) {
-            response->success = false;
-            response->message = "TCP connection to RP2350 is not available";
-            RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
-            return;
+            RCLCPP_WARN(this->get_logger(), "Reconnecting TCP...");
+
+            if (!tcp_client_->connect_with_retry()) {
+                response->success = false;
+                response->message = "Failed to reconnect";
+                return;
+            }
         }
 
         // Reset result flag before sending
         {
             std::lock_guard<std::mutex> lock(result_mutex_);
             result_ready_ = false;
+            waiting_for_response_ = true;
         }
 
         RCLCPP_INFO(this->get_logger(),
                     "Service call — cmd: %s", request->cmd.c_str());
 
-        tcp_client_->send_command(cmd);
+        if (!tcp_client_->send_command(cmd)) RCLCPP_ERROR(this->get_logger(),
+                                                            "TCP Client couldn't send the command.");
 
         // Wait for reader thread to deliver a terminal packet
         GripperResponse result;
         {
             std::unique_lock<std::mutex> lock(result_mutex_);
-            result_cv_.wait(lock, [this] { return result_ready_.load(); });
+            if (!result_cv_.wait_for(lock, std::chrono::seconds(3),
+                                [this] { return result_ready_; }))
+            {
+                response->success = false;
+                response->message = "Timeout waiting for response";
+                return;
+            }
+
             result = latest_result_;
         }
 
@@ -251,7 +269,8 @@ private:
     // Service ↔ reader handoff
     std::mutex              result_mutex_;
     std::condition_variable result_cv_;
-    std::atomic<bool>       result_ready_{ false };
+    bool                    result_ready_ = false;
+    bool                    waiting_for_response_ = false;      
     GripperResponse         latest_result_;
 };
 
