@@ -193,6 +193,11 @@ bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
         }
 
         if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // No data available yet → NOT an error
+                return false;  // or special status
+            }
+
             std::cerr << "recv error: " << strerror(errno) << "\n";
             close_socket();
             return false;

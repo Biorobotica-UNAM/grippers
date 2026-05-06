@@ -121,6 +121,11 @@ private:
                 continue;
             }
 
+            if (!waiting_for_response_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+
             // Blocks until any packet arrives (progress or final)
             GripperResponse pkt;
             if (!tcp_client_->try_recv(pkt)) {   // non-throwing, returns false on timeout
@@ -133,6 +138,7 @@ private:
                     std::lock_guard<std::mutex> lock(result_mutex_);
                     latest_result_ = pkt;
                     result_ready_  = true;
+                    waiting_for_response_ = false;
                 }
                 result_cv_.notify_one();
             }
@@ -173,6 +179,7 @@ private:
         {
             std::lock_guard<std::mutex> lock(result_mutex_);
             result_ready_ = false;
+            waiting_for_response_ = true;
         }
 
         RCLCPP_INFO(this->get_logger(),
@@ -260,6 +267,7 @@ private:
     std::mutex              result_mutex_;
     std::condition_variable result_cv_;
     bool                    result_ready_ = false;
+    bool                    waiting_for_response_ = false;      
     GripperResponse         latest_result_;
 };
 
