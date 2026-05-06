@@ -139,9 +139,11 @@ bool GripperTCPClient::connect_once()
                   sizeof(addr)) < 0) {
         printf("Connect fail.\n");
         close_socket();
+        connected_ = false;
         return false;
     }
 
+    connected_ = true;
     return true;
 }
 
@@ -168,6 +170,7 @@ bool GripperTCPClient::send_all(const uint8_t * buf, std::size_t len)
                            len - sent,
                            MSG_NOSIGNAL);   // prevent SIGPIPE on broken pipe
         if (n <= 0) {
+            connected_ = false;
             close_socket();
             return false;
         }
@@ -188,6 +191,7 @@ bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
         if (n == 0) {
             // Peer closed connection
             std::cerr << "Connection closed by peer\n";
+            connected_ = false;
             close_socket();
             return false;
         }
@@ -199,6 +203,8 @@ bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
             }
 
             std::cerr << "recv error: " << strerror(errno) << "\n";
+            
+            connected_ = false;
             close_socket();
             return false;
         }   // timeout (EAGAIN) or closed connection

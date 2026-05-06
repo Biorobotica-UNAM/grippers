@@ -74,7 +74,7 @@ public:
     bool send_command(uint8_t cmd);
     bool try_recv(GripperResponse &result);
 
-    bool is_connected() const { return sock_fd_ >= 0; }
+    bool is_connected() const { return connected_; }
 
     bool connect_with_retry();
 
@@ -95,6 +95,7 @@ private:
     std::string host_;
     uint16_t    port_;
     int         timeout_ms_ {1000};
+    bool        connected_{false};
     uint8_t     seq_        {0};    // rolling sequence number
 };
 

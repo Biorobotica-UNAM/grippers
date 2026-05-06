@@ -169,10 +169,13 @@ private:
 
         // Guard against a lost connection
         if (!tcp_client_ || !tcp_client_->is_connected()) {
-            response->success = false;
-            response->message = "TCP connection not available";
-            RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
-            return;
+            RCLCPP_WARN(this->get_logger(), "Reconnecting TCP...");
+
+            if (!tcp_client_->connect_with_retry()) {
+                response->success = false;
+                response->message = "Failed to reconnect";
+                return;
+            }
         }
 
         // Reset result flag before sending
