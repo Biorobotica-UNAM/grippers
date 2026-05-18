@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iostream>
 #include <thread>
+#include <vector>
 
 // =============================================================================
 //  GripperSDK
@@ -97,6 +98,7 @@ private:
     int         timeout_ms_ {1000};
     bool        connected_{false};
     uint8_t     seq_        {0};    // rolling sequence number
+    uint8_t     last_seq_   {0};
 };
 
 }  // namespace gripper

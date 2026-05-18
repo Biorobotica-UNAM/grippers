@@ -16,6 +16,9 @@
 namespace grippers
 {
 
+// Maximum accepted payload size — protects against malformed packets or line noise
+static constexpr uint16_t MAX_PAYLOAD = 256;
+
 // =============================================================================
 //  Construction / Destruction
 // =============================================================================
@@ -43,11 +46,19 @@ bool GripperTCPClient::send_command(uint8_t cmd) {
             connect_with_retry();
         }
 
-        // ── Build 8-byte request frame ────────────────────────────────────────────
-        uint8_t tx[FRAME_SIZE] = {};
-        tx[0] = cmd;
-        tx[1] = seq_++;
-        // tx[2..7] = 0x00 (reserved)
+        // Header (2 bytes) + Payload (8 bytes) = 10 bytes total
+        uint16_t payload_len = 8;
+        uint8_t tx[10] = {};
+
+        // Write Header (size in Big Endian)
+        tx[0] = (payload_len >> 8) & 0xFF;
+        tx[1] = payload_len & 0xFF;
+
+        // Write Payload
+        tx[2] = cmd;
+        last_seq_ = seq_;       // save BEFORE incrementing — used to validate the response
+        tx[3]     = seq_++;
+        // tx[4..9] reserved (0x00)
 
         if (!send_all(tx, FRAME_SIZE)) {
             close_socket();
@@ -61,42 +72,72 @@ bool GripperTCPClient::send_command(uint8_t cmd) {
 
 bool GripperTCPClient::try_recv(GripperResponse &result)
 {
-    uint8_t rx[FRAME_SIZE] = {};
-
-    if (!recv_all(rx, FRAME_SIZE)) {   // blocks until full frame or timeout
-        std::cout << "Fail in try_recv." << std::endl;
+    // 1. Read 2-byte header
+    uint8_t header[2] = {0};
+    if (!recv_all(header, 2)) {
+        // Clean socket — stream is desynced if header read fails
+        close_socket();
+        connected_ = false;
         return false;
     }
 
-    // Same parsing as send_command
-    result.status         = rx[4];
-    result.actual_rpm     = (static_cast<uint16_t>(rx[5]) << 4) | ((rx[6] >> 4) & 0x0F);
-    result.actual_current = (static_cast<uint16_t>((rx[6]) & 0x0F)) | rx[7];
+    uint16_t payload_len = (static_cast<uint16_t>(header[0]) << 8) | header[1];
 
-    switch (result.status) {
-        case STATUS_MOVING:
-            result.success = true;
-            result.message = "In progress";
-            break;
-        case STATUS_REACHED:
-            result.success = true;
-            result.message = "Object target reached";
-            break;
-        case STATUS_RETRACTED:
-            result.success = true;
-            result.message = "Gripper retracted to initial position";
-            break;
-        case STATUS_STALLED:
-            result.success = false;
-            result.message = "Motor stalled — could not reach target";
-            break;
-        default:
-            result.success = false;
-            result.message = "Unknown status: " + std::to_string(result.status);
-            break;
+    // Reject invalid or oversized payloads before allocating or waiting
+    if (payload_len == 0 || payload_len > MAX_PAYLOAD) {
+        close_socket();
+        connected_ = false;
+        return false;
     }
 
-    return true;
+    // 2. Read payload dynamically
+    std::vector<uint8_t> rx(payload_len);
+    if (!recv_all(rx.data(), payload_len)) {
+        // Clean socket — stream is desynced if payload read fails
+        close_socket();
+        connected_ = false;
+        return false;
+    }
+
+    // 3. Parse payload
+    if (payload_len >= 8) {
+        // Validate sequence number — rx[1] mirrors tx[3] (seq echoed by the Pico)
+        uint8_t recv_seq = rx[1];
+        if (recv_seq != last_seq_) {
+            // Stale or out-of-order response — discard without closing the socket
+            return false;
+        }
+
+        result.status         = rx[4];
+        result.actual_rpm     = (static_cast<uint16_t>(rx[5]) << 4) | ((rx[6] >> 4) & 0x0F);
+        result.actual_current = (static_cast<uint16_t>(rx[6] & 0x0F) << 8) | rx[7];
+
+        switch (result.status) {
+            case STATUS_MOVING:
+                result.success = true;
+                result.message = "In progress";
+                break;
+            case STATUS_REACHED:
+                result.success = true;
+                result.message = "Object target reached";
+                break;
+            case STATUS_RETRACTED:
+                result.success = true;
+                result.message = "Gripper retracted to initial position";
+                break;
+            case STATUS_STALLED:
+                result.success = false;
+                result.message = "Motor stalled — could not reach target";
+                break;
+            default:
+                result.success = false;
+                result.message = "Unknown status: " + std::to_string(result.status);
+                break;
+        }
+        return true;
+    }
+
+    return false;
 }
 
 bool GripperTCPClient::connect_with_retry()
