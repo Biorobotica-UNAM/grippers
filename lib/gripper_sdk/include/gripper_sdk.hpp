@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iostream>
 #include <thread>
+#include <vector>
 
 // =============================================================================
 //  GripperSDK
@@ -49,6 +50,7 @@ struct GripperResponse
 {
     bool     success        {false};
     uint8_t  status         {0};
+    int32_t  position       {0};
     uint16_t actual_rpm     {0};
     uint16_t actual_current {0};
     std::string message;
@@ -97,6 +99,7 @@ private:
     int         timeout_ms_ {1000};
     bool        connected_{false};
     uint8_t     seq_        {0};    // rolling sequence number
+    uint8_t     last_seq_   {0};
 };
 
 }  // namespace gripper

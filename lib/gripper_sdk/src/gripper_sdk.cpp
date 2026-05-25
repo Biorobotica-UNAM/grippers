@@ -16,6 +16,9 @@
 namespace grippers
 {
 
+// Maximum accepted payload size — protects against malformed packets or line noise
+static constexpr uint16_t MAX_PAYLOAD = 256;
+
 // =============================================================================
 //  Construction / Destruction
 // =============================================================================
@@ -43,13 +46,26 @@ bool GripperTCPClient::send_command(uint8_t cmd) {
             connect_with_retry();
         }
 
-        // ── Build 8-byte request frame ────────────────────────────────────────────
-        uint8_t tx[FRAME_SIZE] = {};
-        tx[0] = cmd;
-        tx[1] = seq_++;
-        // tx[2..7] = 0x00 (reserved)
+        std::vector<uint8_t> payload;
 
-        if (!send_all(tx, FRAME_SIZE)) {
+        payload.push_back(cmd);
+
+        uint16_t payload_len =
+            static_cast<uint16_t>(payload.size());
+
+        std::vector<uint8_t> tx;
+
+        // Length prefix (Big Endian)
+        tx.push_back((payload_len >> 8) & 0xFF);
+        tx.push_back(payload_len & 0xFF);
+
+        // Payload
+        tx.insert(
+            tx.end(),
+            payload.begin(),
+            payload.end());
+
+        if (!send_all(tx.data(), tx.size())) {
             close_socket();
             result.message = "TCP send failed: " + std::string(std::strerror(errno));
             continue;
@@ -61,17 +77,61 @@ bool GripperTCPClient::send_command(uint8_t cmd) {
 
 bool GripperTCPClient::try_recv(GripperResponse &result)
 {
-    uint8_t rx[FRAME_SIZE] = {};
+    // 1. Read 2-byte header
+    uint8_t header[2] = {0};
 
-    if (!recv_all(rx, FRAME_SIZE)) {   // blocks until full frame or timeout
-        std::cout << "Fail in try_recv." << std::endl;
+    if (!recv_all(header, 2)) {
+        // Clean socket — stream is desynced if header read fails
+        close_socket();
+        connected_ = false;
+
         return false;
     }
 
-    // Same parsing as send_command
-    result.status         = rx[4];
-    result.actual_rpm     = (static_cast<uint16_t>(rx[5]) << 4) | ((rx[6] >> 4) & 0x0F);
-    result.actual_current = (static_cast<uint16_t>((rx[6]) & 0x0F)) | rx[7];
+    uint16_t payload_len = 
+        (static_cast<uint16_t>(header[0]) << 8) | 
+        header[1];
+
+    // Reject invalid or oversized payloads before allocating or waiting
+    if (payload_len == 0 || payload_len > MAX_PAYLOAD) {
+        close_socket();
+        connected_ = false;
+        return false;
+    }
+
+    // 2. Read payload dynamically
+    std::vector<uint8_t> rx(payload_len);
+    if (!recv_all(rx.data(), payload_len)) {
+        // Clean socket — stream is desynced if payload read fails
+        close_socket();
+        connected_ = false;
+        return false;
+    }
+
+    // 3. Parse payload
+    if (payload_len < 9)
+    {
+        return false;
+    }
+
+    // ---------------------------------
+    // Deserialize motor report
+    // ---------------------------------
+    result.actual_rpm =
+        (static_cast<uint16_t>(rx[0]) << 8) |
+         static_cast<uint16_t>(rx[1]);
+
+    result.actual_current =
+        (static_cast<uint16_t>(rx[2]) << 8) |
+         static_cast<uint16_t>(rx[3]);
+
+    result.position =
+        (static_cast<int32_t>(rx[4]) << 24) |
+        (static_cast<int32_t>(rx[5]) << 16) |
+        (static_cast<int32_t>(rx[6]) << 8)  |
+         static_cast<int32_t>(rx[7]);
+
+    result.status = rx[8];
 
     switch (result.status) {
         case STATUS_MOVING:
