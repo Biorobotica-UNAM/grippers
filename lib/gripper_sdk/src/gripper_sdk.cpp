@@ -134,7 +134,11 @@ bool GripperTCPClient::try_recv(GripperResponse &result)
     result.status = rx[8];
 
     switch (result.status) {
-        case STATUS_MOVING:
+        case STATUS_OPENING:
+            result.success = true;
+            result.message = "In progress";
+            break;
+        case STATUS_CLOSING:
             result.success = true;
             result.message = "In progress";
             break;
@@ -142,7 +146,7 @@ bool GripperTCPClient::try_recv(GripperResponse &result)
             result.success = true;
             result.message = "Object target reached";
             break;
-        case STATUS_RETRACTED:
+        case STATUS_IDLE:
             result.success = true;
             result.message = "Gripper retracted to initial position";
             break;

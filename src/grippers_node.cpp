@@ -132,7 +132,7 @@ private:
                 continue;
             }
 
-            if (pkt.status != STATUS_MOVING) {
+            if (pkt.status != STATUS_OPENING || pkt.status != STATUS_CLOSING) {
                 // Terminal packet — wake up the service handler
                 {
                     std::lock_guard<std::mutex> lock(result_mutex_);
@@ -230,15 +230,15 @@ private:
                        const std::shared_ptr<MoveGrippers::Response> & response)
     {
         static const std::unordered_map<uint8_t, std::string> status_map = {
-            { STATUS_RETRACTED,   "RETRACTED"   },
-            { STATUS_REACHED,     "REACHED"     },
-            { STATUS_STALLED,     "STALLED"     },
+            { STATUS_IDLE,    "IDLE"   },
+            { STATUS_REACHED, "REACHED"},
+            { STATUS_STALLED, "STALLED"},
         };
 
         auto it = status_map.find(result.status);
         response->status    = (it != status_map.end()) ? it->second : "UNKNOWN";
         response->success   = (result.status == STATUS_REACHED ||
-                             result.status == STATUS_RETRACTED);
+                             result.status == STATUS_IDLE);
         response->message   = result.message;
         response->speed_rpm = result.actual_rpm;
         response->position  = result.position;
