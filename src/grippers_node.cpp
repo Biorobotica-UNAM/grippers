@@ -37,7 +37,7 @@ public:
     : Node("gripper_node", options)
     {
         // --- Declare parameters ---
-        this->declare_parameter<std::string>              ("ip",             "172.27.1.25");
+        this->declare_parameter<std::string>              ("ip",             "172.27.1.120");
         this->declare_parameter<int>                      ("port",           8888);
         this->declare_parameter<int>                      ("tcp_timeout_ms", 1000);
 
@@ -210,10 +210,11 @@ private:
 
         RCLCPP_INFO(this->get_logger(),
                     "Response — success: %s  status: %s  "
-                    "actual_rpm: %u  current: %u  msg: %s",
+                    "actual_rpm: %u  position: %d  current: %u  msg: %s",
                     result.success ? "true" : "false",
                     status.c_str(),
                     result.actual_rpm,
+                    result.position,
                     result.actual_current,
                     result.message.c_str());
     }
@@ -235,11 +236,12 @@ private:
         };
 
         auto it = status_map.find(result.status);
-        response->status  = (it != status_map.end()) ? it->second : "UNKNOWN";
-        response->success = (result.status == STATUS_REACHED ||
+        response->status    = (it != status_map.end()) ? it->second : "UNKNOWN";
+        response->success   = (result.status == STATUS_REACHED ||
                              result.status == STATUS_RETRACTED);
-        response->message = result.message;
+        response->message   = result.message;
         response->speed_rpm = result.actual_rpm;
+        response->position  = result.position;
         response->current   = result.actual_current;
     }
 
