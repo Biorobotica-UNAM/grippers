@@ -9,6 +9,9 @@
 #include "gripper_sdk.hpp"
 #include "grippers_interfaces/srv/move_grippers.hpp"
 
+// TODO: Calibrate mounted in case
+#define CNT_TO_RAD 0.000125f
+
 using MoveGrippers = grippers_interfaces::srv::MoveGrippers;
 using namespace std::chrono_literals;
 
@@ -108,8 +111,8 @@ private:
         joint_states_.velocity.resize(joint_names.size(), 0.0);
         joint_states_.effort.resize(joint_names.size(),   0.0);
 
-        dummie_positions.push_back(0.0);
-        dummie_positions.push_back(0.0);
+        positions.push_back(0.0);
+        positions.push_back(0.0);
     }
 
     // blocks on TCP recv, dispatches progress vs final
@@ -206,6 +209,7 @@ private:
             result = latest_result_;
         }
 
+        update_positions(result);
         fill_response(result, response);
 
         RCLCPP_INFO(this->get_logger(),
@@ -221,7 +225,7 @@ private:
 
     void timer_callback() {
         joint_states_.header.stamp = this->now();
-        joint_states_.position     = dummie_positions;
+        joint_states_.position     = positions;
 
         joint_states_pub_->publish(joint_states_);
     }
@@ -245,6 +249,13 @@ private:
         response->current   = result.actual_current;
     }
 
+    void update_positions(const GripperResponse & result)
+    {
+        double position_rad = 0.7853 - CNT_TO_RAD * result.position;
+        
+        for (auto& pos : positions) pos = position_rad;
+    }
+
 
     // Members
     rclcpp::TimerBase::SharedPtr                               timer;
@@ -262,7 +273,7 @@ private:
     std::string service_name;
 
     std::vector<std::string> joint_names;
-    std::vector<double> dummie_positions;
+    std::vector<double> positions;
 
     // Reader thread
     std::thread          reader_thread_;
