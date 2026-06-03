@@ -1,5 +1,7 @@
 /**:
   ros__parameters:
+    simulation: false
+
     ip: "172.27.1.120"
     port: 8888
     tcp_timeout_ms: 2000
