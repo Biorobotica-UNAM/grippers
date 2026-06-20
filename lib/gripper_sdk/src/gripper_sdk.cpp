@@ -80,11 +80,15 @@ bool GripperTCPClient::try_recv(GripperResponse &result)
     // 1. Read 2-byte header
     uint8_t header[2] = {0};
 
-    if (!recv_all(header, 2)) {
-        // Clean socket — stream is desynced if header read fails
+    RecvStatus status = recv_all(header, 2);
+
+    if (status == RecvStatus::Timeout) {
+        return false;   // no data yet, socket still valid
+    }
+
+    if (status == RecvStatus::Disconnected) {
         close_socket();
         connected_ = false;
-
         return false;
     }
 
@@ -101,8 +105,13 @@ bool GripperTCPClient::try_recv(GripperResponse &result)
 
     // 2. Read payload dynamically
     std::vector<uint8_t> rx(payload_len);
-    if (!recv_all(rx.data(), payload_len)) {
-        // Clean socket — stream is desynced if payload read fails
+    status = recv_all(rx.data(), payload_len);
+
+    if (status == RecvStatus::Timeout) {
+        return false;
+    }
+
+    if (status == RecvStatus::Disconnected) {
         close_socket();
         connected_ = false;
         return false;
@@ -186,7 +195,12 @@ bool GripperTCPClient::connect_once()
     if (sock_fd_ < 0) return false;
     printf("Socket created successfully.\n");
 
-    configure_socket();  // <-- your idea
+    // Poner no bloqueante ANTES de connect() — así connect() no se cuelga
+    // en el timeout del kernel (~127s en Linux por default).
+    int orig_flags = ::fcntl(sock_fd_, F_GETFL, 0);
+    ::fcntl(sock_fd_, F_SETFL, orig_flags | O_NONBLOCK);
+
+    configure_socket();
 
     struct sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -198,14 +212,63 @@ bool GripperTCPClient::connect_once()
         return false;
     }
 
-    if (::connect(sock_fd_,
-                  reinterpret_cast<struct sockaddr*>(&addr),
-                  sizeof(addr)) < 0) {
-        printf("Connect fail.\n");
+    int rc = ::connect(sock_fd_,
+                       reinterpret_cast<struct sockaddr*>(&addr),
+                       sizeof(addr));
+
+    if (rc < 0 && errno != EINPROGRESS) {
+        // Falla inmediata: red inalcanzable, host rechaza, etc.
+        printf("Connect fail (immediate): %s\n", strerror(errno));
         close_socket();
         connected_ = false;
         return false;
     }
+
+    if (rc < 0) {
+        // EINPROGRESS: el handshake quedó en curso. Esperamos a que el fd
+        // se vuelva escribible, con timeout real controlado por nosotros.
+        fd_set wfds;
+        FD_ZERO(&wfds);
+        FD_SET(sock_fd_, &wfds);
+
+        struct timeval tv;
+        tv.tv_sec  = timeout_ms_ / 1000;
+        tv.tv_usec = (timeout_ms_ % 1000) * 1000;
+
+        int sel = ::select(sock_fd_ + 1, nullptr, &wfds, nullptr, &tv);
+
+        if (sel == 0) {
+            printf("Connect timed out after %d ms.\n", timeout_ms_);
+            close_socket();
+            connected_ = false;
+            return false;
+        }
+        if (sel < 0) {
+            printf("select() error: %s\n", strerror(errno));
+            close_socket();
+            connected_ = false;
+            return false;
+        }
+
+        // El fd quedó escribible — eso no garantiza éxito, hay que
+        // chequear SO_ERROR para distinguir "conectó" de "falló async".
+        int so_error = 0;
+        socklen_t len = sizeof(so_error);
+        if (::getsockopt(sock_fd_, SOL_SOCKET, SO_ERROR, &so_error, &len) < 0 ||
+            so_error != 0)
+        {
+            printf("Connect fail (deferred): %s\n",
+                   so_error ? strerror(so_error) : "getsockopt failed");
+            close_socket();
+            connected_ = false;
+            return false;
+        }
+    }
+
+    // Listo: la conexión está armada. Volvemos a modo bloqueante porque
+    // send_all()/recv_all() dependen de SO_SNDTIMEO/SO_RCVTIMEO, que solo
+    // tienen efecto sobre sockets bloqueantes.
+    ::fcntl(sock_fd_, F_SETFL, orig_flags);
 
     connected_ = true;
     return true;
@@ -243,39 +306,29 @@ bool GripperTCPClient::send_all(const uint8_t * buf, std::size_t len)
     return true;
 }
 
-bool GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
+GripperTCPClient::RecvStatus
+GripperTCPClient::recv_all(uint8_t * buf, std::size_t len)
 {
-    // SO_RCVTIMEO isn't set on the socket so ::recv() won't time out
     std::size_t received = 0;
     while (received < len) {
-        ssize_t n = ::recv(sock_fd_,
-                           buf + received,
-                           len - received,
-                           0);
+        ssize_t n = ::recv(sock_fd_, buf + received, len - received, 0);
         if (n == 0) {
-            // Peer closed connection
-            std::cerr << "Connection closed by peer\n";
             connected_ = false;
             close_socket();
-            return false;
+            return RecvStatus::Disconnected;
         }
-
         if (n < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // No data available yet → NOT an error
-                return false;  // or special status
+                return RecvStatus::Timeout;     // socket is fine, just no data yet
             }
-
             std::cerr << "recv error: " << strerror(errno) << "\n";
-            
             connected_ = false;
             close_socket();
-            return false;
-        }   // timeout (EAGAIN) or closed connection
-
+            return RecvStatus::Disconnected;
+        }
         received += static_cast<std::size_t>(n);
     }
-    return true;
+    return RecvStatus::Ok;
 }
 
 void GripperTCPClient::close_socket()

@@ -183,14 +183,25 @@ private:
             return;
         }
 
+        RCLCPP_INFO(this->get_logger(), "A");
+
         if (!tcp_client_ || !tcp_client_->is_connected()) {
-            RCLCPP_WARN(this->get_logger(), "Reconnecting TCP...");
+
+            RCLCPP_INFO(this->get_logger(), "B");
+
             if (!tcp_client_->connect_with_retry()) {
-                response->success = false;
-                response->message = "Failed to reconnect";
-                return;
+
+                RCLCPP_INFO(this->get_logger(), "C");
+                RCLCPP_WARN(this->get_logger(), "Reconnecting TCP...");
+                if (!tcp_client_->connect_with_retry()) {
+                    response->success = false;
+                    response->message = "Failed to reconnect";
+                    return;
+                }
             }
         }
+
+        RCLCPP_INFO(this->get_logger(), "D");
 
         {
             std::lock_guard<std::mutex> lock(result_mutex_);

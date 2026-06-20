@@ -81,6 +81,8 @@ public:
 
     bool connect_with_retry();
 
+    enum class RecvStatus { Ok, Timeout, Disconnected };
+
 private:
     bool connect_once();
 
@@ -90,7 +92,7 @@ private:
     bool send_all(const uint8_t * buf, std::size_t len);
 
     // Receive exactly `len` bytes within timeout_ms_ — handles partial reads
-    bool recv_all(uint8_t * buf, std::size_t len);
+    RecvStatus recv_all(uint8_t * buf, std::size_t len);
 
     void close_socket();
 

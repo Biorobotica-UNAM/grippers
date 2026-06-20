@@ -3,7 +3,7 @@
     simulation: false
 
     ip: "172.27.1.120"
-    port: 8888
+    port: 8080
     tcp_timeout_ms: 2000
 
     joint_states_topic: "left_gripper/joint_states"
