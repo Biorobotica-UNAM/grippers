@@ -86,6 +86,14 @@ public:
 
     ~GripperNode()
     {
+        // Send close command to gripper before shutting down
+        if (!simulation_ && tcp_client_ && tcp_client_->is_connected())
+        {
+            RCLCPP_INFO(this->get_logger(), "Sending close command before shutdown...");
+            if (!tcp_client_->send_command(CMD_CLOSE))
+                RCLCPP_WARN(this->get_logger(), "Failed to send close command on shutdown.");
+        }
+
         running_ = false;
         if (reader_thread_.joinable()) reader_thread_.join();
     }
