@@ -84,7 +84,7 @@ public:
         sub_stop_ = this->create_subscription<std_msgs::msg::Bool>(
             "/navigation/navigation_ctrl/stop",
             rclcpp::QoS(1).reliable(),
-            std::bind(&GripperNode::stop_callback, this, _1),
+            std::bind(&GripperNode::stop_callback, this, std::placeholders::_1),
             stop_options);
 
         timer = this->create_wall_timer(
