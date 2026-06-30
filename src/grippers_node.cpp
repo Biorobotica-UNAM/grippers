@@ -342,6 +342,7 @@ private:
     rclcpp::Service<MoveGrippers>::SharedPtr                   service_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_pub_;
     sensor_msgs::msg::JointState                               joint_states_;
+    rclcpp::CallbackGroup::SharedPtr stop_cb_group_;
 
     // Params
     bool        simulation_ = false;  // NEW
