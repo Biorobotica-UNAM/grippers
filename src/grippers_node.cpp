@@ -77,6 +77,12 @@ public:
         joint_states_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
             joint_states_topic, 10);
 
+        sub_stop_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/navigation/navigation_ctrl/stop",
+            rclcpp::QoS(1).reliable(),
+            std::bind(&GripperNode::stop_callback, this, _1),
+            stop_options);
+
         timer = this->create_wall_timer(
             100ms, std::bind(&GripperNode::timer_callback, this));
 
@@ -112,7 +118,35 @@ private:
 
     void reader_loop()
     {
+        bool prev_stopped_ = false;
+
         while (running_) {
+            bool current_stop = stopped_.load();
+            if (current_stop && !prev_stopped_)
+            {
+                RCLCPP_WARN(this->get_logger(), "reader_loop: STOP detected — sending CMD_STOP");
+
+                {
+                    std::lock_guard<std::mutex> lock(result_mutex_);
+                    if (waiting_for_response_) {
+                        // Abort whatever service call is in flight
+                        waiting_for_response_ = false;
+                        result_ready_ = true;
+                        latest_result_.success = false;
+                        latest_result_.message = "Aborted by STOP";
+                        result_cv_.notify_one();
+                    }
+                }
+
+                if (tcp_client_ && tcp_client_->is_connected()) {
+                    if (!tcp_client_->send_command(CMD_STOP))
+                        RCLCPP_ERROR(this->get_logger(), "reader_loop: failed to send CMD_STOP");
+                } else {
+                    RCLCPP_WARN(this->get_logger(), "reader_loop: not connected — cannot send CMD_STOP");
+                }
+            }
+            prev_stopped_ = current_stop;
+
             if (!tcp_client_ || !tcp_client_->is_connected()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 continue;
@@ -142,6 +176,12 @@ private:
         const std::shared_ptr<MoveGrippers::Request>  request,
         const std::shared_ptr<MoveGrippers::Response> response)
     {
+        if (stopped_.load()) {
+            response->success = false;
+            response->message = "Gripper detenido por señal de paro";
+            return;
+        }
+
         // --- Simulation: resolve command and fake a response ---
         if (simulation_)  // NEW BLOCK
         {
@@ -191,15 +231,9 @@ private:
             return;
         }
 
-        RCLCPP_INFO(this->get_logger(), "A");
-
         if (!tcp_client_ || !tcp_client_->is_connected()) {
 
-            RCLCPP_INFO(this->get_logger(), "B");
-
             if (!tcp_client_->connect_with_retry()) {
-
-                RCLCPP_INFO(this->get_logger(), "C");
                 RCLCPP_WARN(this->get_logger(), "Reconnecting TCP...");
                 if (!tcp_client_->connect_with_retry()) {
                     response->success = false;
@@ -208,8 +242,6 @@ private:
                 }
             }
         }
-
-        RCLCPP_INFO(this->get_logger(), "D");
 
         {
             std::lock_guard<std::mutex> lock(result_mutex_);
@@ -254,6 +286,25 @@ private:
         joint_states_.header.stamp = this->now();
         joint_states_.position     = positions;
         joint_states_pub_->publish(joint_states_);
+    }
+
+    // ======================================================
+    // TOPIC CALLBACK (stop)
+    // ======================================================
+    void stop_callback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        bool stop = msg->data;
+
+        if (stop && !stopped_.load())
+        {
+            RCLCPP_WARN(this->get_logger(), "STOP recibido — deteniendo gripper");
+            stopped_.store(true);
+        }
+        else if (!stop && stopped_.load())
+        {
+            RCLCPP_INFO(this->get_logger(), "STOP desactivado — gripper disponible");
+            stopped_.store(false);
+        }
     }
 
     void fill_response(const GripperResponse & result,
@@ -304,12 +355,15 @@ private:
     std::thread       reader_thread_;
     std::atomic<bool> running_;
 
-    // Service ↔ reader handoff
+    // Service <-> reader handoff
     std::mutex              result_mutex_;
     std::condition_variable result_cv_;
     bool                    result_ready_         = false;
     bool                    waiting_for_response_ = false;
     GripperResponse         latest_result_;
+
+    // Stop
+    std::atomic<bool> stopped_{false};
 };
 
 }  // namespace grippers
