@@ -8,6 +8,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "gripper_sdk.hpp"
 #include "grippers_interfaces/srv/move_grippers.hpp"
+#include "std_msgs/msg/bool.hpp"
 
 #define CNT_TO_RAD 0.000125f
 
@@ -76,6 +77,9 @@ public:
 
         joint_states_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
             joint_states_topic, 10);
+
+        rclcpp::SubscriptionOptions stop_options;
+        stop_options.callback_group = stop_cb_group_;
 
         sub_stop_ = this->create_subscription<std_msgs::msg::Bool>(
             "/navigation/navigation_ctrl/stop",
@@ -363,6 +367,7 @@ private:
     GripperResponse         latest_result_;
 
     // Stop
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_stop_;
     std::atomic<bool> stopped_{false};
 };
 
